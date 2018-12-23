@@ -26,6 +26,10 @@ $size: 48;
         }
     }
 
+.ico-bitbucket { @include get-ico-image(bitbucket); background-color: #0052CC; }
+.ico-linkedin  { @include get-ico-image(linkedin);  background-color: #0077B5; }
+.ico-strava    { @include get-ico-image(strava);    background-color: #FC4C02; }
+
     .ico-facebook {
         @include get-ico-image(facebook);
 

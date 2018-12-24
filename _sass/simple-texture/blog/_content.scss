@@ -131,8 +131,8 @@
     pre,
     samp {
         font-family: $fonts-code;
-        font-size: 12px;
-        line-height: 20px;
+        font-size: 15px;
+        line-height: 22px;
     }
 
     table,
@@ -140,6 +140,7 @@
     figure,
     .highlighter-rouge {
         margin: 12px; // Margin for all code blocks.
+        margin-right: 20px; // Margin for all code blocks.
     }
 
     // Inline code blocks.

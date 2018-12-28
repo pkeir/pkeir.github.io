@@ -131,16 +131,16 @@
     pre,
     samp {
         font-family: $fonts-code;
-        font-size: 15px;
-        line-height: 22px;
+        font-size: 0.95em;
+        line-height: 1.35em;
     }
 
     table,
     blockquote,
     figure,
     .highlighter-rouge {
-        margin: 12px; // Margin for all code blocks.
-        margin-right: 20px; // Margin for all code blocks.
+//        margin: 12px; // Margin for all code blocks.
+//        margin-right: 20px; // Left "
     }
 
     // Inline code blocks.

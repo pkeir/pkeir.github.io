@@ -22,7 +22,7 @@ constexpr void swap(T &t1, T &t2)
 }
 ```
 
-A version of `swap` which takes *three* arguments can help to identify a recursive pattern. In `swap3`, below, a temporary variable `tmp` is declared, and initialised, by a *move assignment* to the first argument. This is followed by a move assignment, of each function (template) argument, to the argument which follows it. The update of the *last* argument is irregular, in that its move assignment is to the temporary variable; still holding the contents of the *first* argument. Nevertheless, a simple pattern of move assignments is observed; one for each argument.
+A version of `swap` which takes *three* arguments can help to identify a recursive pattern. In `swap3`, below, a temporary variable `tmp` is declared, and initialised, by a *move assignment* to the first argument. This is followed by a move assignment, of each function (template) argument, to the argument which follows it. The update of the *last* argument is irregular, in that its move assignment is to the temporary variable; still holding the contents of the *first* argument. Nevertheless, a simple pattern of move assignments is observed; one for each argument:
 
 ```cpp
 template <typename T>
@@ -35,9 +35,9 @@ constexpr void swap3(T &t1, T &t2, T &t3)
 }
 ```
 
-A general version can use variadic templates and a C++17 fold expression. The operator provided to the fold must be a binary function. Each of `swap3`'s move assignments involves *two* of `swap3`'s function (template) arguments; so a fold *can* be considered. The combining operation of a C++17 fold expression must though be an *operator*.
+A general version can use variadic templates and a C++17 fold expression. The operator provided to a fold must be a binary function. Each of `swap3`'s move assignments involves *two* of `swap3`'s function (template) arguments; so a fold *can* be considered. The combining operation of a C++17 fold expression must though be an *operator*.
 
-Of course there is no standard binary operator overload which will do anything like the move assignment we require. A simple class template container can be defined with a suitable binary operator; let's treat ourselves to `operator+`.
+Of course there is no standard binary operator overload which will do anything like the move assignment we require. A simple class template container can be defined with a suitable binary operator; let's treat ourselves to `operator+`:
 
 ```cpp
 template <typename T>
@@ -50,7 +50,7 @@ template <typename T> wrap(T) -> wrap<T>;
 
 The operator's definition comprises a move assignment, and a return statement. The move assignment is reassuringly similar to those in `swap` or `swap3`, with the additional consideration to work on the `x` member of the two `wrap` objects involved.
 
-The value returned by the operator value will be required by the fold expression; just as `((0-1)-2)`[^2] "returns" the result of `(0-1)` as the minuend of the remaining subtraction expression. Let's see the expected use of the `wrap` class in another version of a binary swap function:
+The value returned by the operator will be required by the fold expression; just as `((0-1)-2)`[^2] "returns" the result of `(0-1)` as the minuend of the remaining subtraction expression. Let's demonstrate the `wrap` class in another version of a binary swap function:
 
 ```cpp
 template <typename T>
@@ -73,7 +73,7 @@ constexpr void swap_op_2(T &t1, T &t2)
 }
 ```
 
-We have the type and operator for our fold expression; and a candidate using them is shown below. First of all, this will be a variadic function template, with a compulsory first parameter, allowing us to easily initialise the `tmp` temporary variable. This first parameter is *also* used to provide a type parameter `T`, allowing `wrap` to be declared as a local, non-template, class. The fold expression presents one final hurdle, in that our function parameter pack `xs` includes neither the first argument, `x`; nor the last, `tmp`. Accordingly, a lambda function `c` is defined with a parameter pack; and called on the following line, with a pack expansion of `xs`, bracketed by `x` and `tmp`. The fold expression statement can then execute, as the entire body of the lambda function.
+We have the type and operator for our fold expression; and a candidate using them is shown below. First of all, this will be a variadic function template, with a compulsory first parameter, allowing us to easily initialise the `tmp` temporary variable. This first parameter is also used to obtain a type parameter `T`, allowing `wrap` to be declared as a local, non-template, class; and with no need for a user-defined deduction guide. The fold expression presents one final hurdle, in that our function parameter pack `xs` includes neither the first argument, `x`; nor the last, `tmp`. Accordingly, a lambda function `c` is defined with a parameter pack; and called on the following line, with a pack expansion of `xs`, bracketed by `x` and `tmp`. The fold expression statement can then execute, as the entire body of the lambda function.
 
 
 ```cpp
@@ -90,7 +90,7 @@ constexpr void swap(T &x, Ts &...xs)
 }
 ```
 
-A final n-ary `swap` function template requires just a top and a tail. The type trait `std::enable_if_t` is used to specify the return type. Through use of `std::conjunction_v` and `std::is_same` we can ensure the function template is instantiated only when all of its arguments have the same type. The `noexcept` specifier is also added: lexically identical to that of the standard `std::swap`, this variadic version can assure us that no exceptions are thrown when variable templates `std::is_nothrow_move_constructible_v` and `std::is_nothrow_move_assignable_v` both instantiate as `true`, given the type of the first argument. In addition we are assured that this condition applies to all argument types, by our specification that they are all the same.
+The final n-ary `swap` function template requires just a top and a tail. The type trait `std::enable_if_t` is used to specify the return type. Through use of `std::conjunction_v` and `std::is_same` we can ensure the function template is instantiated only when all of its arguments have the same type. The `noexcept` specifier is also added: lexically identical to that of the standard `std::swap`, this variadic version can assure us that no exceptions are thrown when variable templates `std::is_nothrow_move_constructible_v` and `std::is_nothrow_move_assignable_v` both instantiate as `true`, given the type of the first argument. In addition we are assured that this condition applies to all argument types, by our specification that they are all the same.
 
 
 ```cpp
@@ -112,6 +112,8 @@ noexcept (
   c(x,xs...,tmp);
 }
 ```
+
+To accommodate generic code, a nullary overload of `swap` is also provided. A single argument is already supported in the code above. A Bitbucket mercurial repository is available [here](https://bitbucket.org/pgk/nary-swap).
 
 [^1]: http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p0879r0.html
 [^2]: Addition and subtraction in C++ have left-to-right associativity; so `(0-1-2)` will be parsed as `((0-1)-2)`; evaluating to `(-3)`. A left fold expression can achieve the same result: `[](auto ...xs){ return (... - xs); }(0,1,2)`.

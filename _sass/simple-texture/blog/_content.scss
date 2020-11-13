@@ -148,12 +148,14 @@
 
     // Inline code blocks.
     code.highlighter-rouge {
-        margin: 0;
-        padding: 4px;
+        font-size: .875em;
+        font-weight: bold;
+//        margin: 0;
+//        padding: 4px;
 
-        white-space: nowrap;
+//        white-space: nowrap;
 
-        background-color: $color-inline-code-background;
+//        background-color: $color-inline-code-background;
     }
 
     pre {

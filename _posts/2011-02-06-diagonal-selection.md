@@ -1,6 +1,7 @@
 ---
 layout: post
 title:  "Diagonal Selection"
+author: "Paul Keir"
 category: Fortran
 tags:
  - Fortran

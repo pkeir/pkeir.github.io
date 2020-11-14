@@ -1,6 +1,7 @@
 ---
 layout:   post
 title:    "The Maximum Score in Super Don Quix-ote"
+author: "Paul Keir"
 category: videogames
 tags:
  - C++

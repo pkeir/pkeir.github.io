@@ -1,6 +1,7 @@
 ---
 layout: post
 title:  "Fragrant Fortran"
+author: "Paul Keir"
 category: Fortran
 tags:
  - Fortran

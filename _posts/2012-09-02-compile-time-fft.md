@@ -1,6 +1,7 @@
 ---
 layout: post
 title:  "A compile-time FFT in C++11"
+author: "Paul Keir"
 category: C++ 
 tags:
  - C++

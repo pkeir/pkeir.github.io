@@ -1,6 +1,7 @@
 ---
 layout: post
 title:  "Building, say, indices<6,4,2,0,-2,-4>"
+author: "Paul Keir"
 category: C++ 
 tags:
  - C++

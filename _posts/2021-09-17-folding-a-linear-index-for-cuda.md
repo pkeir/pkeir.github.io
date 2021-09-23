@@ -28,7 +28,7 @@ launched; organised as a collection of 210 CUDA thread blocks,
 each containing 24 (i.e. `4*3*2`) threads.
 
 Each thread in a CUDA grid is uniquely identified by the `unsigned int`
-zero-based `x`, `y`, and `z` data members of the `dim3` built-in constants:
+zero-based `x`, `y`, and `z` data members of the `uint3` built-in constants:
 `blockIdx` and `threadIdx`.  Each of these data members will be less than its
 corresponding kernel launch parameter. The kernel launch parameters used in
 the triple-chevron syntax are also available within the kernel using two
@@ -132,12 +132,10 @@ blockDim.x`. At the point where `row` and `col` are initialised, we essentially
 concatenate all of the blocks of a grid together; and in doing so, we lose
 valuable index information.
 
-It is a little surprising that NVIDIA do not provide an API for obtaining such
-global linear ids themselves. Then again, while the Khronos OpenCL API includes
-`get_global_linear_id`, and Khronos SYCL too has the
-`get_global_linear_id` member function of `nd_item`, both are
-effectively specified using the non-coalescing row/column approach just
-discussed.
+It is a little surprising that NVIDIA don't provide an API for obtaining such
+global linear ids themselves. The Khronos OpenCL API includes
+`get_global_linear_id`; and Khronos SYCL too has the
+`get_global_linear_id` member function of `nd_item`.
 
 # Folding
 
@@ -154,26 +152,164 @@ index_left_fold :: (Foldable t, Num a) => p -> t (a, a) -> (a, a)
 index_left_fold is = foldl (\(e1,i1) (e2,i2) -> (e1*e2,i1*e2+i2)) (1,0)
 ```
 
-The `index_left_fold` Haskell function above returns a tuple, the first
-component of which holds the calculated total size of the array, while the
-second component holds the topical linear index. (The definition can use
+The `index_left_fold` Haskell function above returns a tuple. Its first
+component holds the calculated total size of the array; and its
+second component holds the calculated linear index. (The definition can use
 `foldr` as a drop in replacement for `foldl` if desired.) Let's consider
-the application: `index_left_fold [(4,1),(8,6)]`. In a C++ context, this could
-relate to a 4x8 array (i.e. `T[4][8]`); if we named it `arr` we would
-index it with syntax like: `arr[1][6]`. As expected, the tuple returned
-is `(32,14)`.
+an example application: `index_left_fold [(4,1),(8,6)]`. In a C++ context, this
+could relate to an 4x8 array type (i.e. `T[4][8]`); if we named it `arr` we
+would index it with syntax like: `arr[1][6]`. As expected, the tuple returned
+is `(32,14)`. Reassuringly, the result of `index_left_fold [(4,1),(8,7)]`
+is `(32,15)`; with the linear index of `15` one greater than the earlier `14`,
+after incrementing the fastest moving index.
+
+The two components of the fold's combining function have an intuitive aspect.
+The second part, `i1*e2+i2`, which ultimately produces the linear index, is
+reminiscent of the common `i*w+j` expression that might similarly
+calculate a linear index in a traditional doubly nested loop. Meanwhile, the
+first part, `e1*e2`, accumulates the array size as the product of its extents.
+At each step of the fold, the value provided by the `e2` parameter holds the
+product of the array dimensions so far; aligning with the idea that a
+multidimensional array is also an array of arrays. So too the fold's initial
+value of `(1,0)` provides the multiplicative unit (i.e. 1) for the product
+calculation; and zero can be thought of as an offset into a non-existent
+zeroeth dimension.
+
+# Implementation in C++
 
 When considering a C++ version we note that there a few options to invoke a
-suitable folding mechanism. The `std::accumulate` function template is a [^4],
+suitable folding mechanism. The `std::accumulate` function template facilitates
+a versatile left fold[^4], but the version included with standard C++ libraries
+will not run via nvcc on the GPU. Note also that the `constexpr`
+attribute of `std::accumulate` is irrelevant here as the CUDA built-ins,
+including `threadIdx`, are all *runtime* values.  `std::accumulate` is also
+absent from [NVIDIA's libcu++](https://nvidia.github.io/libcudacxx).
 
-alas, the versions included with standard C++ libraries will not run through
-CUDA on the GPU; the function is also absent from NVIDIA's libcu. Regardless of
-nvcc's `--expt-relaxed-constexpr` flag, the `constexpr` attribute of
-`std::accumulate` is no help here as crucial parameters such as `threadIdx` are
-not usable within constant expressions.
+```cuda
+constexpr __forceinline__ __device__ __host__
+unsigned index_left_fold(const unsigned extent, const unsigned index) {
+  return index;
+}
 
-above uses a tuple of integers
+template <typename T, typename ...Ts>
+constexpr __forceinline__ __device__ __host__
+unsigned index_left_fold(const T e1, const T i1, const T e2, const T i2, Ts ...xs) {
+  return index_left_fold(e1*e2, i1*e2+i2, xs...);
+}
+```
 
+The CUDA C++ definition of `index_left_fold` shown above uses variadic
+templates. The recursive overload processes the first *two* arguments at each
+step. This leads to the final accumulated extent being discarded in the
+recursive base case at the top. This is already usable for C-style arrays; with
+the same indexing applied to the 4x8 array from earlier, the result of
+`index_left_fold(4,1, 8,6)` is `14`, and the result of `index_left_fold(4,1,
+8,7)` is `15`.
+
+When working within a CUDA kernel, the indices and extents are already
+provided, by the built-in constants: `gridDim`, `blockDim`, `blockIdx` and
+`threadIdx`; and CUDA's three dimensional grid of three dimensional blocks
+(3x3) is isomorphic to a 6D array. The fastest moving indices correspond to the
+thread indices within each block; while the outermost extents correspond to
+the number of blocks within each grid dimension. Thankfully the specific
+mapping of indices to extents for each of the 6 dimensions need be defined only 
+once for common configurations, as shown below:
+
+```cuda
+template <unsigned dims>
+__forceinline__ __device__ unsigned cuda_linear_id();
+
+template <>
+__forceinline__ __device__ unsigned cuda_linear_id<1>() {
+  return index_left_fold(gridDim.x,  blockIdx.x,
+                         blockDim.x, threadIdx.x);
+}
+
+template <>
+__forceinline__ __device__ unsigned cuda_linear_id<2>() {
+  return index_left_fold(gridDim.y,  blockIdx.y,
+                         gridDim.x,  blockIdx.x,
+                         blockDim.y, threadIdx.y,
+                         blockDim.x, threadIdx.x);
+}
+
+template <>
+__forceinline__ __device__ unsigned cuda_linear_id<3>() {
+  return index_left_fold(gridDim.z,  blockIdx.z,
+                         gridDim.y,  blockIdx.y,
+                         gridDim.x,  blockIdx.x,
+                         blockDim.z, threadIdx.z,
+                         blockDim.y, threadIdx.y,
+                         blockDim.x, threadIdx.x);
+}
+```
+
+When applied to the example task from earlier, of incrementing each element of
+a suitably sized array from within a CUDA kernel, with coalesced reads and
+writes, the 3 common varieties can now appear as shown below.  Note that
+`cuda_linear_id<3>()` also works for all 3 of these kernels as CUDA implictly
+sets unspecified dimension extents to `1`; and corresponding indices to `0`.
+
+```cuda
+__global__ void kernel1x1(unsigned *p) { p[cuda_linear_id<1>()]++; }
+__global__ void kernel2x2(unsigned *p) { p[cuda_linear_id<2>()]++; }
+__global__ void kernel3x3(unsigned *p) { p[cuda_linear_id<3>()]++; }
+```
+
+# Both Linear Index and Size
+
+The `index_left_fold` variadic function template introduced above is inspired
+by simplicity; involving no additional user or library types. Nevertheless, it
+seems wasteful for the recursive base case to discard the final `extent` value;
+which at this point contains the calculated total size of the array. Returning
+the total size and linear index as a *pair* of values can drive the design of
+an alternative implementation.
+
+While the extent/index pair to be returned *could* be stored in an `std::pair`
+or `std::array` instance, a custom type built on two `unsigned int` members
+has a pleasing simplicity; and allows for a combining operator to be defined,
+so permitting this implementation to use a concise C++17 fold expression.
+The `ei` class is shown below. Note how the `operator+` definition
+resembles that of `index_left_fold`.
+
+```cuda
+struct ei
+{
+  unsigned extent, index;
+
+  __forceinline__ __device__ __host__
+  constexpr ei operator+(ei x) { return {extent * x.extent, index * x.extent + x.index}; }
+
+  __forceinline__ __device__ __host__
+  constexpr bool operator==(const ei& x) const {
+    return extent==x.extent && index==x.index;
+  }
+};
+```
+
+The variadic function template to calculate the
+linear index and array size *together* can then be defined in short order:
+
+```cuda
+template <typename ...Ts>
+__forceinline__ __device__ __host__
+constexpr ei size_index_left_fold(Ts ...xs) { return (ei{1,0} + ... + xs); }
+
+static_assert(ei{48,47}==size_index_left_fold(ei{2,1}, ei{4,3}, ei{6,5}));
+```
+
+# Unfolded
+
+How would the CUDA linear index expressions appear if they were typed
+in full by-hand rather than by a fold.
+
+```cpp
+unsigned i1 = blockIdx.x*blockDim.x+threadIdx.x;
+unsigned i2 = ((blockIdx.y*gridDim.x+blockIdx.x)*blockDim.y+threadIdx.y)*blockDim.x+threadIdx.x;
+unsigned i3 = ((((blockIdx.z*gridDim.y+blockIdx.y)*gridDim.x+blockIdx.x)*blockDim.z+threadIdx.z)*blockDim.y+threadIdx.y)*blockDim.x+threadIdx.x;
+```
+
+linear index is the most important thing
 
 SYCL has 2D buffers/accessors
 
@@ -233,5 +369,5 @@ has a unique identifier. Like the
 
 [^3]: CUDA thread IDs are unique only within a block. For more information on thread IDs, see Section 2.1. Kernels and Section 2.2 Thread Hierarchy from the CUDA Programming Guide (version 11.4).
 
-[^4]: https://github.com/pkeir/accumulate
+[^4]: [https://github.com/pkeir/accumulate](https://github.com/pkeir/accumulate)
 

@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Folding a Linear Index from CUDA Dimensions and Indices"
+title:  "Folding a Global Linear Id from CUDA Dimensions and Indices"
 author: "Paul Keir"
 category: C++
 tags:
@@ -12,8 +12,8 @@ tags:
 ---
 
 In this post I'll introduce a C++ variadic function template to calculate a
-global linear id, using a left fold over a list of extent/index pairs
-corresponding to each dimension of a rectilinear structure, such as a
+global linear index, using a left fold over a list of extent/index pairs
+corresponding to each dimension of a rectilinear structure; such as a
 multidimensional array.  The fold is first derived in Haskell, before the C++
 version, applicable to arbitrary dimension counts, is applied to the familiar
 `gridDim`, `blockDim`, `blockIdx` and `threadIdx` builtins of a CUDA grid.
@@ -38,8 +38,8 @@ CUDA's `blockIdx` and `threadIdx` variables are analogous to the
 indices of a set of six nested loops. In the serial C++ code below,
 the innermost loop body, in a cache friendly manner, increments
 each element of `a6`; a 6D array. Here the array extents are
-equal to each loop's iteration count. Indexing in general remains
-comparably simple while each pair are proportionate.
+equal to each loop's iteration count. Nested loop indexing is often
+as simple when the array and loop extents are proportional.
 
 ```cpp
 int main(int argc, char *argv[])
@@ -74,7 +74,7 @@ In the code above, such a linear id would be useful if it was instead the
 When required, global linear ids can be calculated from the four built-in
 constants mentioned earlier. For a one dimensional grid of one dimensional
 blocks (1x1), the calculation is simple: `blockIdx.x * blockDim.x +
-threadIdx.x`.  When used as an array index, this is conducive to memory
+threadIdx.x`.  When used as an array index, this is also conducive to memory
 coalescence[^2]. The consecutive, increasing thread IDs[^3] of each warp's
 threads, correspond to the similarly consecutive, increasing values calculated
 from the thread indices in this common expression.  In contrast, while another
@@ -101,12 +101,12 @@ dimensional blocks (2x2), I often find myself reaching for `getGlobalIdx_2D_2D`
 from Martin Peniak's [CUDA Thread Indexing
 Cheatsheet](https://cs.calvin.edu/courses/cs/374/CUDA/CUDA-Thread-Indexing-Cheatsheet.pdf);
 courtesy of Calvin University.  In the code above, assuming the global array
-referenced by `p` has space for at least as many `float` values as there are
+referenced by `p` has space for as many `float` values as there are
 threads in the CUDA grid, then all its elements will be incremented, and memory
-accesses duly coalesced.  Again, it is easy to (perhaps accidentally) calculate
-a *different* set of unique linear ids, which also (as with `threadIdx.x *
-gridDim.x + blockIdx.x`) leads to non-coalesced accesses to global memory. An
-example of this common pattern is shown in the code below:
+accesses are duly coalesced.  Again, it is easy to (perhaps accidentally)
+calculate a *different* set of unique linear ids, which also (as with
+`threadIdx.x * gridDim.x + blockIdx.x`) leads to non-coalesced accesses to
+global memory. An example of such a common pattern is shown in the code below:
 
 ```cuda
 __device__ unsigned get_global_id_2x2_noncoalesced()
@@ -123,14 +123,14 @@ __global__ void kernel2x2_noncoalesced(float *p)
 }
 ```
 
-Memory access in the kernel above is not coalesced. Why? Two threads with
-consecutive thread IDs[^3], say in a warp, might still have a different
-`threadIdx.y`. The row/column system of `get_global_id_2x2_noncoalesced`
-above though would calculate indices for such pairs as if they were from
-separate rows of a larger 2D structure with a width of `gridDim.x *
-blockDim.x`. At the point where `row` and `col` are initialised, we essentially
-concatenate all of the blocks of a grid together; and in doing so, we lose
-valuable index information.
+Memory access in the kernel above is not coalesced. Why? Consider two threads
+with consecutive thread IDs[^3]; say in a warp. Such a pair will often have a
+different `threadIdx.y`. The row/column system of
+`get_global_id_2x2_noncoalesced` above though would calculate indices for such
+pairs as if they were from separate rows of a larger 2D structure with a width
+of `gridDim.x * blockDim.x`. At the point where `row` and `col` are
+initialised, we essentially concatenate all of the blocks of a grid together;
+and in doing so, lose valuable index information.
 
 It is a little surprising that NVIDIA don't provide an API for obtaining such
 global linear ids themselves. The Khronos OpenCL API includes
@@ -139,29 +139,29 @@ global linear ids themselves. The Khronos OpenCL API includes
 
 # Folding
 
-Rather than move on to consider how a scenario involving a
+Rather than advance, to consider how a scenario involving a
 *three* dimensional grid of *three* dimensional blocks (3x3) might play out,
 we can perhaps already agree that there is cause to pause
 when calculating a linear index from a multidimensional array index set.
 Instead, let's look at a potential solution to the problem *in
 general*: how a fold can calculate a linear index from the common input
-parameters, an array of extent/index pairs.
+parameters, a collection of extent/index pairs.
 
 ```haskell
-index_left_fold :: (Foldable t, Num a) => p -> t (a, a) -> (a, a)
+index_left_fold :: [(Integer, Integer)] -> (Integer, Integer)
 index_left_fold is = foldl (\(e1,i1) (e2,i2) -> (e1*e2,i1*e2+i2)) (1,0)
 ```
 
 The `index_left_fold` Haskell function above returns a tuple. Its first
-component holds the calculated total size of the array; and its
-second component holds the calculated linear index. (The definition can use
-`foldr` as a drop in replacement for `foldl` if desired.) Let's consider
-an example application: `index_left_fold [(4,1),(8,6)]`. In a C++ context, this
-could relate to an 4x8 array type (i.e. `T[4][8]`); if we named it `arr` we
-would index it with syntax like: `arr[1][6]`. As expected, the tuple returned
-is `(32,14)`. Reassuringly, the result of `index_left_fold [(4,1),(8,7)]`
-is `(32,15)`; with the linear index of `15` one greater than the earlier `14`,
-after incrementing the fastest moving index.
+component holds the calculated total size of the array; and its second
+component holds the calculated linear index. (The definition can use `foldr` as
+a drop in replacement for `foldl` if desired.) Let's consider an example
+application: `index_left_fold [(4,1),(8,6)]`. In a C++ context, this could
+relate to a 4x8 array type (i.e. `T[4][8]`); if we gave it a pirate name like
+`arr` we would index it with syntax such as: `arr[1][6]`. As expected, the tuple
+returned is `(32,14)`. Reassuringly, the result of `index_left_fold
+[(4,1),(8,7)]` is `(32,15)`; with the linear index of `15` one greater than the
+earlier `14`, after incrementing the fastest moving index.
 
 The two components of the fold's combining function have an intuitive aspect.
 The second part, `i1*e2+i2`, which ultimately produces the linear index, is
@@ -198,7 +198,7 @@ unsigned index_left_fold(const T e1, const T i1, const T e2, const T i2, Ts ...x
 }
 ```
 
-The CUDA C++ definition of `index_left_fold` shown above uses variadic
+The CUDA C++ definition of `index_left_fold` shown above instead uses variadic
 templates. The recursive overload processes the first *two* arguments at each
 step. This leads to the final accumulated extent being discarded in the
 recursive base case at the top. This is already usable for C-style arrays; with
@@ -217,16 +217,16 @@ once for common configurations, as shown below:
 
 ```cuda
 template <unsigned dims>
-__forceinline__ __device__ unsigned cuda_linear_id();
+__forceinline__ __device__ unsigned cuda_global_linear_id();
 
 template <>
-__forceinline__ __device__ unsigned cuda_linear_id<1>() {
+__forceinline__ __device__ unsigned cuda_global_linear_id<1>() {
   return index_left_fold(gridDim.x,  blockIdx.x,
                          blockDim.x, threadIdx.x);
 }
 
 template <>
-__forceinline__ __device__ unsigned cuda_linear_id<2>() {
+__forceinline__ __device__ unsigned cuda_global_linear_id<2>() {
   return index_left_fold(gridDim.y,  blockIdx.y,
                          gridDim.x,  blockIdx.x,
                          blockDim.y, threadIdx.y,
@@ -234,7 +234,7 @@ __forceinline__ __device__ unsigned cuda_linear_id<2>() {
 }
 
 template <>
-__forceinline__ __device__ unsigned cuda_linear_id<3>() {
+__forceinline__ __device__ unsigned cuda_global_linear_id<3>() {
   return index_left_fold(gridDim.z,  blockIdx.z,
                          gridDim.y,  blockIdx.y,
                          gridDim.x,  blockIdx.x,
@@ -247,13 +247,13 @@ __forceinline__ __device__ unsigned cuda_linear_id<3>() {
 When applied to the example task from earlier, of incrementing each element of
 a suitably sized array from within a CUDA kernel, with coalesced reads and
 writes, the 3 common varieties can now appear as shown below.  Note that
-`cuda_linear_id<3>()` also works for all 3 of these kernels as CUDA implictly
+`cuda_global_linear_id<3>()` also works for all 3 of these kernels as CUDA implictly
 sets unspecified dimension extents to `1`; and corresponding indices to `0`.
 
 ```cuda
-__global__ void kernel1x1(unsigned *p) { p[cuda_linear_id<1>()]++; }
-__global__ void kernel2x2(unsigned *p) { p[cuda_linear_id<2>()]++; }
-__global__ void kernel3x3(unsigned *p) { p[cuda_linear_id<3>()]++; }
+__global__ void kernel1x1(unsigned *p) { p[cuda_global_linear_id<1>()]++; }
+__global__ void kernel2x2(unsigned *p) { p[cuda_global_linear_id<2>()]++; }
+__global__ void kernel3x3(unsigned *p) { p[cuda_global_linear_id<3>()]++; }
 ```
 
 # Both Linear Index and Size
@@ -267,7 +267,7 @@ an alternative implementation.
 
 While the extent/index pair to be returned *could* be stored in an `std::pair`
 or `std::array` instance, a custom type built on two `unsigned int` members
-has a pleasing simplicity; and allows for a combining operator to be defined,
+is sufficient; and allows for a combining operator to be defined,
 so permitting this implementation to use a concise C++17 fold expression.
 The `ei` class is shown below. Note how the `operator+` definition
 resembles that of `index_left_fold`.
@@ -300,8 +300,11 @@ static_assert(ei{48,47}==size_index_left_fold(ei{2,1}, ei{4,3}, ei{6,5}));
 
 # Unfolded
 
-How would the CUDA linear index expressions appear if they were typed
-in full by-hand rather than by a fold.
+How would the CUDA linear index expressions appear if they were typed in full,
+by-hand rather than by a fold? The three `unsigned int` variables in the code
+below are initialised by expressions which are equivalent to the fold
+expressions obtained by expanding `cuda_global_linear_id` for the 1x1, 2x2 and
+3x3 configurations respectively.
 
 ```cpp
 unsigned i1 = blockIdx.x*blockDim.x+threadIdx.x;
@@ -309,58 +312,44 @@ unsigned i2 = ((blockIdx.y*gridDim.x+blockIdx.x)*blockDim.y+threadIdx.y)*blockDi
 unsigned i3 = ((((blockIdx.z*gridDim.y+blockIdx.y)*gridDim.x+blockIdx.x)*blockDim.z+threadIdx.z)*blockDim.y+threadIdx.y)*blockDim.x+threadIdx.x;
 ```
 
-linear index is the most important thing
+We can then compare these with the expressions used by the
+[CUDA Thread Indexing
+Cheatsheet](https://cs.calvin.edu/courses/cs/374/CUDA/CUDA-Thread-Indexing-Cheatsheet.pdf).
+For the 1x1 case, there is no difference: both use
+`blockIdx.x*blockDim.x+threadIdx.x`. For the 2x2 case, the Cheatsheet's
+`getGlobalIdx_2D_2D` uses `4` multiplications and `3` additions; whereas
+`cuda_global_linear_id<2>` uses fewer: `3` multiplications, and `3` additions.
+`getGlobalIdx_2D_2D` also uses the `blockDim.x` constant twice, while
+`cuda_global_linear_id<2>` uses each of its terms only once. For the 3x3 case,
+differences increase. With `getGlobalIdx_3D_3D`, `9` multiplications and `5`
+additions are used; while `cuda_global_linear_id<3>` uses only `5`
+multiplications and `5` additions; each one less than the number of array
+dimensions involved (i.e. 6 here)[^5].  Again, no term repetitions occur in
+`cuda_global_linear_id<3>`; while `getGlobalIdx_3D_3D` uses `blockDim.x` three
+times, `blockDim.y` twice, and `gridDim.x` twice also.
 
-SYCL has 2D buffers/accessors
+One may nevertheless fear that the recursion, or paired accumulation of extent
+and index in the inlined call to a `cuda_global_linear_id` template
+instantiation, may lead to the compiler producing a suboptimal representation
+of the unfolded expressions discussed above. Comparing the PTX output by `nvcc`
+for two minimal test programs, with one using `cuda_global_linear_id`, and the
+other using the unfolded expressions, shows the pair to be equivalent: only the
+order of the PTX operations, and the registers used differ. Furthermore, with a
+similar pair of cubin files, `nvdisasm` reveals that this distinction is
+trivial, with both versions producing identical assembly code.
 
-It is
-certainly
-possible already to device a linear indexing scheme 
+# Conclusion
 
-
-
-So too, the 
-
-is due to the performance advantage gained through memory coalescence.
-ensures that 
-which applies when
-threads with 
-is that memory accesses will 
-
-CUDA Programming Guide
-
-Section 2.2 Thread Hierarchy
-
-Section 4.1. SIMT Architecture
-"...each warp contains threads of consecutive, increasing thread IDs with the first warp containing thread 0."
-
- will also 
-As the smallest unit of execution, a
-*warp* involves the simultaneous execution of 
-
-A two dimensional grid of
-two dimensional blocks requires a bit more care:
-`blockIdx.x
-
-, with `threadIdx` and
-`blockIdx` a unique pairing within a CUDA grid.
-
-This is also needed in other array calculations.
-
-are analogous to the extents
-of a common rectinlinear array.
-
-It is often useful to flatten
-
-, each of the thousands of threads involved
-has a unique identifier. Like the 
-
-
-
-
-
-
-
+The project goal was to create a fold operation to produce a linear index from
+a collection of array extent/index pairs, applicable to CUDA threads.  If you
+are in need of a global linear id for a CUDA thread, please try the
+`cuda_global_linear_id` function template. For more general array applications,
+the underlying `index_left_fold` and its associate `size_index_left_fold` are
+also available.  The specialisations of `cuda_global_linear_id` appear optimal
+for three common CUDA grid configurations (1x1, 2x2, and 3x3), and handle all
+other configurations well[^6]. The GitHub repository for the code introduced
+above can be found at
+[https://github.com/pkeir/cuda-linear-indexing](https://github.com/pkeir/cuda-linear-indexing).
 
 
 [^1]: CUDA could not have the luxury here of incrementing a newly-added index variable to the outer scope. With CUDA, each kernel instance executes in parallel.
@@ -371,3 +360,6 @@ has a unique identifier. Like the
 
 [^4]: [https://github.com/pkeir/accumulate](https://github.com/pkeir/accumulate)
 
+[^5]: The regularity of the fold operation described by `index_left_fold` means that with an array of dimension `N`, there will be `N-1` multiplication operations, and `N-1` addition operations; i.e. the complexity is O(n).
+
+[^6]: Any `dim3` components left unspecified during a CUDA kernel launch default to `1`. It would not be difficult to create a set of function template specialisations which omit such unary dimension extents from the corresponding call to `index_left_fold`; so omitting suboptimal multiplications by `1`. The challenge is in providing this via a user-friendly API.

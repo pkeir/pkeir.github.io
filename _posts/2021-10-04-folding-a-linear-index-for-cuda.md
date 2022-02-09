@@ -149,7 +149,7 @@ parameters, a collection of extent/index pairs.
 
 ```haskell
 index_left_fold :: [(Integer, Integer)] -> (Integer, Integer)
-index_left_fold is = foldl (\(e1,i1) (e2,i2) -> (e1*e2,i1*e2+i2)) (1,0)
+index_left_fold = foldl (\(e1,i1) (e2,i2) -> (e1*e2,i1*e2+i2)) (1,0)
 ```
 
 The `index_left_fold` Haskell function above returns a tuple. Its first

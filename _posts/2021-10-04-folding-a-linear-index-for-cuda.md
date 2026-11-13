@@ -99,7 +99,7 @@ __global__ void kernel2x2(float *p)
 When calculating a global linear id from a *two* dimensional grid of *two*
 dimensional blocks (2x2), I often find myself reaching for `getGlobalIdx_2D_2D`
 from Martin Peniak's [CUDA Thread Indexing
-Cheatsheet](https://cs.calvin.edu/courses/cs/374/CUDA/CUDA-Thread-Indexing-Cheatsheet.pdf);
+Cheatsheet](https://cs.calvin.edu/courses/cs/374/GPU/CUDA-Thread-Indexing-Cheatsheet.pdf);
 courtesy of Calvin University.  In the code above, assuming the global array
 referenced by `p` has space for as many `float` values as there are
 threads in the CUDA grid, then all its elements will be incremented, and memory
